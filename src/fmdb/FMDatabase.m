@@ -4,6 +4,9 @@
 
 #if FMDB_SQLITE_STANDALONE
 #import <sqlite3/sqlite3.h>
+#elif SQLCIPHER_CRYPTO
+#import <SQLCipher/sqlite3.h>
+#import "FMDatabase+SQLCipher.h"
 #else
 #import <sqlite3.h>
 #endif
@@ -429,55 +432,6 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     FMDBRelease(query);
 }
 
-#pragma mark Key routines
-
-- (BOOL)rekey:(NSString*)key {
-    NSData *keyData = [NSData dataWithBytes:(void *)[key UTF8String] length:(NSUInteger)strlen([key UTF8String])];
-    
-    return [self rekeyWithData:keyData];
-}
-
-- (BOOL)rekeyWithData:(NSData *)keyData {
-#ifdef SQLITE_HAS_CODEC
-    if (!keyData) {
-        return NO;
-    }
-    
-    int rc = sqlite3_rekey(_db, [keyData bytes], (int)[keyData length]);
-    
-    if (rc != SQLITE_OK) {
-        NSLog(@"error on rekey: %d", rc);
-        NSLog(@"%@", [self lastErrorMessage]);
-    }
-    
-    return (rc == SQLITE_OK);
-#else
-#pragma unused(keyData)
-    return NO;
-#endif
-}
-
-- (BOOL)setKey:(NSString*)key {
-    NSData *keyData = [NSData dataWithBytes:[key UTF8String] length:(NSUInteger)strlen([key UTF8String])];
-    
-    return [self setKeyWithData:keyData];
-}
-
-- (BOOL)setKeyWithData:(NSData *)keyData {
-#ifdef SQLITE_HAS_CODEC
-    if (!keyData) {
-        return NO;
-    }
-    
-    int rc = sqlite3_key(_db, [keyData bytes], (int)[keyData length]);
-    
-    return (rc == SQLITE_OK);
-#else
-#pragma unused(keyData)
-    return NO;
-#endif
-}
-
 #pragma mark Date routines
 
 + (NSDateFormatter *)storeableDateFormat:(NSString *)format {
@@ -514,20 +468,17 @@ static int FMDBDatabaseBusyHandler(void *f, int count) {
     if (!_isOpen) {
         return NO;
     }
-    
-#ifdef SQLCIPHER_CRYPTO
+#if SQLCIPHER_CRYPTO
     // Starting with Xcode8 / iOS 10 we check to make sure we really are linked with
     // SQLCipher because there is no longer a linker error if we accidently link
     // with unencrypted sqlite library.
     //
     // https://discuss.zetetic.net/t/important-advisory-sqlcipher-with-xcode-8-and-new-sdks/1688
     
-    FMResultSet *rs = [self executeQuery:@"PRAGMA cipher_version"];
+    NSString *cipherVersion = self.cipherVersion;
 
-    if ([rs next]) {
-        NSLog(@"SQLCipher version: %@", rs.resultDictionary[@"cipher_version"]);
-        
-        [rs close];
+    if (cipherVersion) {
+        NSLog(@"SQLCipher version: %@", cipherVersion);
         return YES;
     }
 #else

@@ -86,6 +86,94 @@ Use FMDB in target dependencies
 .product(name: "FMDB", package: "FMDB")
 ```
 
+#### Swift Package Manager with SQLCipher Encryption
+
+If you want to use [SQLCipher](https://www.zetetic.net/sqlcipher/) with FMDB Swift Package you can specify the `SQLCipher` trait when consuming FMDB Swift Package.
+
+```swift
+depdencies: [
+  .package(url: "https://github.com/ccgus/fmdb", from: "2.7.12", traits: ["SQLCipher"])
+]
+```
+
+As of Xcode 16.4 (16F6), there's no direct way in the Xcode UI to select trait variations so you'll need to use a local wrapper package to pull in the FMDB dependency with the `SQLCipher` trait enabled:
+
+```swift
+// swift-tools-version: 6.1
+// The swift-tools-version declares the minimum version of Swift required to build this package.
+
+import PackageDescription
+
+let package = Package(
+    name: "AppDependencies",
+    platforms: [
+        .macOS(.v10_14),
+        .iOS(.v13),
+        .macCatalyst(.v13),
+        .watchOS(.v8),
+        .tvOS(.v15),
+        .visionOS(.v1)
+    ],
+    products: [
+        .library(
+            name: "AppDependencies",
+            targets: ["AppDependencies"]),
+    ],
+    dependencies: [
+        .package(
+            url: "https://github.com/ccgus/fmdb",
+            from: "2.7.12",
+            traits: ["SQLCipher"])
+    ],
+    targets: [
+        .target(
+            name: "AppDependencies",
+            dependencies: [
+                .product(
+                    name: "FMDB",
+                    package: "FMDB")
+            ]
+        )
+    ]
+)
+```
+
+Within Xcode add your local `AppDependencies` wrapper package as a package dependency and FMDB with SQLCipher functionality will be accessible.
+
+Using the `SQLCipher` trait will cause FMDB to include a dependency on SQLCipher.swift and enable `FMDatabase+SQLCipher` methods to set the database key and encrypt a new database:
+
+```swift
+import FMDB
+
+let db = FMDatabase(path: NSTemporaryDirectory().appending("tmp.db"))
+guard db.open() else {
+    print("Unable to open datbase")
+    return
+}
+db.setKey("sup3rs3cr3t")
+// perform database operations to read from/write to the encrypted database
+db.close()
+```
+
+To encrypt an existing database:
+
+```swift
+// path to unencrypted db
+let plaintextDb = FMDatabase(path: NSTemporaryDirectory().appending("unencrypted.db"))
+guard plaintextDb.open() else {
+    print("Unable to open database")
+    return
+}
+// path to export encrypted db to (non-existent prior to export)
+let encryptedDbPath = NSTemporaryDirectory().appending("encrypted.db")
+// attach encrypted db using desired key
+try plaintextDb.executeUpdate("ATTACH DATABASE ? AS encrypted KEY ?", values: [encryptedDbPath, "encryptedPass"])
+// sqlcipher_export providing the alias of the attached encrypted db
+plaintextDb.executeStatements("SELECT sqlcipher_export('encrypted');")
+// detach the encrypted db
+plaintextDb.executeStatements("DETACH DATABASE encrypted;")
+```
+
 ## FMDB Class Reference:
 https://ccgus.github.io/fmdb/html/index.html
 
